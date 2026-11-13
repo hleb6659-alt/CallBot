@@ -6,6 +6,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
 import org.bukkit.MusicInstrument;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MusicInstrumentMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -24,7 +25,10 @@ public final class HornItem {
     public ItemStack create() {
         ItemStack item = new ItemStack(Material.GOAT_HORN);
         item.editMeta(MusicInstrumentMeta.class, meta -> {
-            meta.setInstrument(MusicInstrument.CALL);
+            MusicInstrument call = Registry.INSTRUMENT.get(NamespacedKey.minecraft("call_goat_horn"));
+            if (call != null) {
+                meta.setInstrument(call);
+            }
             meta.displayName(Component.text("Call", NamedTextColor.YELLOW)
                     .decoration(TextDecoration.ITALIC, false));
             meta.lore(List.of(Component.text("~ By Prime", NamedTextColor.YELLOW)
