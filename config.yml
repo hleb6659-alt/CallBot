@@ -1,0 +1,22 @@
+summon-delay-seconds: 10
+spawn-distance: 70
+spawn-height: 35
+fly-speed: 0.9
+lifetime-seconds: 900
+idle-despawn-seconds: 120
+
+gapples: 16
+pearls: 6
+totems: 1
+eat-health: 12
+
+cart-cooldown-seconds: 4
+xbow-chance: 0.30
+cart-explosion-power: 4.0
+cart-block-damage: false
+
+bots:
+  theo:
+    enabled: true
+    name: TheoBaldTheBird
+    skin: TheoBaldTheBird

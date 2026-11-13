@@ -1,0 +1,15 @@
+name: CallBot
+version: 1.0.0
+main: me.prime.callbot.CallBotPlugin
+api-version: '1.21.11'
+author: Prime
+description: Рог Call вызывает бота на элитрах
+commands:
+  callhorn:
+    description: Выдать рог Call или убрать ботов
+    usage: /callhorn give [игрок] | clear
+permissions:
+  callbot.give:
+    default: op
+  callbot.clear:
+    default: op
