@@ -88,6 +88,17 @@ public final class BotManager implements Listener {
         return n;
     }
 
+    public int killAll() {
+        int n = 0;
+        for (PvpBot bot : new ArrayList<>(bots.values())) {
+            if (bot.isAlive()) {
+                bot.kill();
+                n++;
+            }
+        }
+        return n;
+    }
+
     public void mark(Entity e) {
         e.getPersistentDataContainer().set(markKey, PersistentDataType.BYTE, (byte) 1);
     }
@@ -123,24 +134,31 @@ public final class BotManager implements Listener {
         BotType type = types.get(random.nextInt(types.size()));
         PvpBot bot = type.factory().create(plugin, this, type, summonerId);
         World w = anchor.getWorld();
-        Location spawn;
-        boolean flying;
-        if (w.hasCeiling()) {
+        Location spawn = null;
+        boolean flying = false;
+        if (!w.hasCeiling()) {
+            int sim = Math.max(2, anchor.getSimulationDistance());
+            double dist = Math.min(plugin.getConfig().getDouble("spawn-distance", 30), Math.max(14, sim * 16 - 24));
+            for (int i = 0; i < 4 && spawn == null; i++) {
+                double ang = random.nextDouble() * Math.PI * 2;
+                double x = anchor.getX() + Math.cos(ang) * dist;
+                double z = anchor.getZ() + Math.sin(ang) * dist;
+                int bx = (int) Math.floor(x);
+                int bz = (int) Math.floor(z);
+                if (w.isChunkLoaded(bx >> 4, bz >> 4)) {
+                    int ground = w.getHighestBlockYAt(bx, bz);
+                    double y = Math.max(anchor.getY() + plugin.getConfig().getDouble("spawn-height", 18), ground + 12);
+                    y = Math.min(y, w.getMaxHeight() - 3);
+                    spawn = new Location(w, x, y, z);
+                    flying = true;
+                } else {
+                    dist = Math.max(10, dist * 0.7);
+                }
+            }
+        }
+        if (spawn == null) {
             double ang = random.nextDouble() * Math.PI * 2;
             spawn = anchor.getLocation().add(Math.cos(ang) * 12, 0, Math.sin(ang) * 12);
-            flying = false;
-        } else {
-            double sim = Bukkit.getSimulationDistance();
-            double max = Math.max(24, (sim - 1) * 16 - 8);
-            double dist = Math.min(plugin.getConfig().getDouble("spawn-distance", 70), max);
-            double ang = random.nextDouble() * Math.PI * 2;
-            double x = anchor.getX() + Math.cos(ang) * dist;
-            double z = anchor.getZ() + Math.sin(ang) * dist;
-            int ground = w.getHighestBlockYAt((int) Math.floor(x), (int) Math.floor(z));
-            double y = Math.max(anchor.getY() + plugin.getConfig().getDouble("spawn-height", 35), ground + 15);
-            y = Math.min(y, w.getMaxHeight() - 3);
-            spawn = new Location(w, x, y, z);
-            flying = true;
         }
         bot.spawn(spawn, flying);
         if (bot.isAlive()) {

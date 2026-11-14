@@ -11,6 +11,10 @@ public final class CallBotPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        if (getConfig().getInt("config-version", 1) < 2) {
+            saveResource("config.yml", true);
+            reloadConfig();
+        }
         horn = new HornItem(this);
         bots = new BotManager(this);
         getServer().getPluginManager().registerEvents(bots, this);

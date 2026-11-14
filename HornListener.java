@@ -1,5 +1,7 @@
 package me.prime.callbot;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
@@ -10,8 +12,8 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 public final class HornListener implements Listener {
@@ -19,7 +21,7 @@ public final class HornListener implements Listener {
     private final CallBotPlugin plugin;
     private final HornItem horn;
     private final BotManager bots;
-    private final Set<UUID> busy = new HashSet<>();
+    private final Map<UUID, Integer> lastUse = new HashMap<>();
 
     public HornListener(CallBotPlugin plugin, HornItem horn, BotManager bots) {
         this.plugin = plugin;
@@ -45,23 +47,15 @@ public final class HornListener implements Listener {
                 && e.getClickedBlock().getType().isInteractable() && !player.isSneaking()) {
             return;
         }
-        UUID id = player.getUniqueId();
-        if (!busy.add(id)) {
+        int now = Bukkit.getCurrentTick();
+        int cooldown = (int) (plugin.getConfig().getDouble("horn-cooldown-seconds", 30) * 20);
+        Integer last = lastUse.get(player.getUniqueId());
+        if (last != null && now - last < cooldown) {
+            int left = (int) Math.ceil((cooldown - (now - last)) / 20.0);
+            player.sendActionBar(Component.text("Рог перезаряжается: " + left + " с", NamedTextColor.YELLOW));
             return;
         }
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            busy.remove(id);
-            ItemStack current = player.getInventory().getItem(hand);
-            if (horn.is(current)) {
-                int left = current.getAmount() - 1;
-                if (left <= 0) {
-                    player.getInventory().setItem(hand, null);
-                } else {
-                    current.setAmount(left);
-                    player.getInventory().setItem(hand, current);
-                }
-            }
-        }, 2L);
-        bots.scheduleSummon(id);
+        lastUse.put(player.getUniqueId(), now);
+        bots.scheduleSummon(player.getUniqueId());
     }
 }

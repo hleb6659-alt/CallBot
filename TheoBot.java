@@ -41,7 +41,7 @@ public final class TheoBot extends PvpBot {
         weapon = sword;
         meleeDamage = 11.0;
         fireTicks = 160;
-        knockbackBonus = 0.5;
+        knockbackBonus = 0.35;
 
         ItemStack b = new ItemStack(Material.BOW);
         b.addUnsafeEnchantment(Enchantment.FLAME, 1);
@@ -73,7 +73,7 @@ public final class TheoBot extends PvpBot {
 
     @Override
     protected double preferredRange() {
-        return (seq == null && cartCd <= 0) ? 4.5 : 2.6;
+        return (seq == null && cartCd <= 0) ? 4.5 : super.preferredRange();
     }
 
     @Override

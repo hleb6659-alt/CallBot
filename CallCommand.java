@@ -27,7 +27,7 @@ public final class CallCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            msg(sender, "/callhorn give [игрок] | clear", NamedTextColor.GRAY);
+            msg(sender, "/callhorn give [игрок] | kill | clear", NamedTextColor.GRAY);
             return true;
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
@@ -51,6 +51,14 @@ public final class CallCommand implements CommandExecutor, TabCompleter {
                 }
                 msg(sender, "Рог Call выдан: " + target.getName(), NamedTextColor.YELLOW);
             }
+            case "kill" -> {
+                if (!sender.hasPermission("callbot.clear")) {
+                    msg(sender, "Нет прав", NamedTextColor.RED);
+                    return true;
+                }
+                int n = bots.killAll();
+                msg(sender, "Убито ботов: " + n, NamedTextColor.YELLOW);
+            }
             case "clear" -> {
                 if (!sender.hasPermission("callbot.clear")) {
                     msg(sender, "Нет прав", NamedTextColor.RED);
@@ -59,7 +67,7 @@ public final class CallCommand implements CommandExecutor, TabCompleter {
                 int n = bots.removeAll();
                 msg(sender, "Убрано ботов: " + n, NamedTextColor.YELLOW);
             }
-            default -> msg(sender, "/callhorn give [игрок] | clear", NamedTextColor.GRAY);
+            default -> msg(sender, "/callhorn give [игрок] | kill | clear", NamedTextColor.GRAY);
         }
         return true;
     }
@@ -68,7 +76,7 @@ public final class CallCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
-            for (String s : List.of("give", "clear")) {
+            for (String s : List.of("give", "kill", "clear")) {
                 if (s.startsWith(args[0].toLowerCase(Locale.ROOT))) {
                     out.add(s);
                 }

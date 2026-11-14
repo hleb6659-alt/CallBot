@@ -1,14 +1,20 @@
+config-version: 2
+
 summon-delay-seconds: 10
-spawn-distance: 70
-spawn-height: 35
+horn-cooldown-seconds: 30
+spawn-distance: 30
+spawn-height: 18
 fly-speed: 0.9
 lifetime-seconds: 900
 idle-despawn-seconds: 120
 
-gapples: 16
+melee-reach: 2.5
+gapples: 15
+enchanted-gapples: 1
+eat-health: 12
+enchanted-eat-health: 6
 pearls: 6
 totems: 1
-eat-health: 12
 
 cart-cooldown-seconds: 4
 xbow-chance: 0.30

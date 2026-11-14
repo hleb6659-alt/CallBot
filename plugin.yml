@@ -7,7 +7,7 @@ description: Рог Call вызывает бота на элитрах
 commands:
   callhorn:
     description: Выдать рог Call или убрать ботов
-    usage: /callhorn give [игрок] | clear
+    usage: /callhorn give [игрок] | kill | clear
 permissions:
   callbot.give:
     default: op

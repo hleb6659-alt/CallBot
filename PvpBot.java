@@ -47,8 +47,9 @@ public abstract class PvpBot {
     protected double knockbackBonus;
 
     protected int age, attackCd, eatTicks, eatCd, swapTicks, strafeTimer, strafeDir = 1, stagger, idleTicks;
-    protected int gapples, pearls, totemsLeft, pearlCd, strikeTicks;
+    protected int gapples, eapples, pearls, totemsLeft, pearlCd, strikeTicks, critWait;
     protected boolean offhandTotem;
+    private boolean eatingEnchanted;
 
     private EnderPearl pearl;
     private Location pearlOrigin, pearlLast;
@@ -59,15 +60,20 @@ public abstract class PvpBot {
         this.manager = manager;
         this.type = type;
         this.summoner = summoner;
-        this.gapples = plugin.getConfig().getInt("gapples", 16);
+        this.gapples = plugin.getConfig().getInt("gapples", 15);
+        this.eapples = plugin.getConfig().getInt("enchanted-gapples", 1);
         this.pearls = plugin.getConfig().getInt("pearls", 6);
         this.totemsLeft = plugin.getConfig().getInt("totems", 1);
     }
 
     protected abstract boolean specialTick(double dist);
 
+    protected double reach() {
+        return plugin.getConfig().getDouble("melee-reach", 2.5);
+    }
+
     protected double preferredRange() {
-        return 2.6;
+        return reach() - 0.7;
     }
 
     protected boolean busy() {
@@ -103,6 +109,12 @@ public abstract class PvpBot {
 
     public boolean isAlive() {
         return entity != null && entity.isValid() && !entity.isDead();
+    }
+
+    public void kill() {
+        if (isAlive()) {
+            entity.setHealth(0.0);
+        }
     }
 
     public void markHurt() {
@@ -347,7 +359,7 @@ public abstract class PvpBot {
         }
         boolean low = entity.getHealth() <= plugin.getConfig().getDouble("eat-health", 12.0);
         if (low) {
-            if (gapples > 0 && dist < 14) {
+            if ((gapples > 0 || eapples > 0) && dist < 14) {
                 Location esc = pickEscape();
                 if (esc != null) {
                     throwPearl(esc, false);
@@ -483,15 +495,22 @@ public abstract class PvpBot {
     }
 
     private void startEating() {
-        if (eatTicks > 0 || eatCd > 0 || gapples <= 0 || pearl != null) {
+        if (eatTicks > 0 || eatCd > 0 || pearl != null) {
             return;
         }
-        if (entity.getHealth() > plugin.getConfig().getDouble("eat-health", 12.0)) {
+        double hp = entity.getHealth();
+        if (eapples > 0 && hp <= plugin.getConfig().getDouble("enchanted-eat-health", 6.0)) {
+            eapples--;
+            eatingEnchanted = true;
+        } else if (gapples > 0 && hp <= plugin.getConfig().getDouble("eat-health", 12.0)) {
+            gapples--;
+            eatingEnchanted = false;
+        } else {
             return;
         }
-        gapples--;
         eatTicks = 32;
-        entity.getEquipment().setItemInMainHand(new ItemStack(Material.GOLDEN_APPLE));
+        entity.getEquipment().setItemInMainHand(new ItemStack(
+                eatingEnchanted ? Material.ENCHANTED_GOLDEN_APPLE : Material.GOLDEN_APPLE));
     }
 
     private void tickEating() {
@@ -502,15 +521,23 @@ public abstract class PvpBot {
             return;
         }
         eatTicks--;
+        Material apple = eatingEnchanted ? Material.ENCHANTED_GOLDEN_APPLE : Material.GOLDEN_APPLE;
         if (eatTicks % 4 == 0) {
             World w = entity.getWorld();
             w.playSound(entity.getLocation(), "entity.generic.eat", SoundCategory.NEUTRAL, 1f, 1f);
             w.spawnParticle(Particle.ITEM, entity.getEyeLocation(), 6, 0.15, 0.15, 0.15, 0.03,
-                    new ItemStack(Material.GOLDEN_APPLE));
+                    new ItemStack(apple));
         }
         if (eatTicks == 0) {
-            entity.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 100, 1));
-            entity.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 2400, 0));
+            if (eatingEnchanted) {
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 400, 1));
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 2400, 3));
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 6000, 0));
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 6000, 0));
+            } else {
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 100, 1));
+                entity.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 2400, 0));
+            }
             holdWeapon();
             eatCd = 10;
         }
@@ -531,8 +558,8 @@ public abstract class PvpBot {
         fwd.multiply(1.0 / len);
         Vector side = new Vector(-fwd.getZ(), 0, fwd.getX());
         if (--strafeTimer <= 0) {
-            strafeDir = random.nextBoolean() ? 1 : -1;
-            strafeTimer = 12 + random.nextInt(30);
+            strafeDir = random.nextInt(3) - 1;
+            strafeTimer = 20 + random.nextInt(40);
         }
         double range = preferredRange();
         double f;
@@ -545,18 +572,15 @@ public abstract class PvpBot {
         } else {
             f = 0.1;
         }
-        Vector m = fwd.clone().multiply(f).add(side.clone().multiply(strafeDir * 0.55));
-        if (m.lengthSquared() > 1e-4) {
-            m.normalize().multiply(eatTicks > 0 ? 0.2 : 0.26);
+        Vector m = fwd.clone().multiply(f).add(side.clone().multiply(strafeDir * 0.2));
+        if (m.length() > 1.0) {
+            m.normalize();
         }
+        m.multiply(eatTicks > 0 ? 0.18 : 0.23);
         Vector v = entity.getVelocity();
         v.setX(m.getX()).setZ(m.getZ());
-        if (entity.isOnGround()) {
-            if (blocked(m)) {
-                v.setY(0.42);
-            } else if (eatTicks == 0 && attackCd <= 2 && dist < 4.0 && random.nextInt(5) == 0) {
-                v.setY(0.42);
-            }
+        if (entity.isOnGround() && blocked(m)) {
+            v.setY(0.42);
         }
         if (entity.isInWater()) {
             v.setY(Math.max(v.getY(), 0.12));
@@ -578,23 +602,40 @@ public abstract class PvpBot {
         if (attackCd > 0) {
             attackCd--;
         }
-        if (eatTicks > 0 || attackCd > 0 || dist > 3.2) {
+        if (eatTicks > 0 || attackCd > 0 || dist > reach()) {
+            critWait = 0;
             return;
         }
         if (!entity.hasLineOfSight(target)) {
             return;
         }
+        boolean falling = !entity.isOnGround() && entity.getVelocity().getY() < -0.08;
+        if (!falling && !entity.isInWater() && critWait < 24) {
+            critWait++;
+            if (entity.isOnGround()) {
+                Vector jump = entity.getVelocity();
+                jump.setY(0.42);
+                entity.setVelocity(jump);
+            }
+            return;
+        }
+        critWait = 0;
         attackCd = 11 + random.nextInt(6);
         entity.swingMainHand();
         if (random.nextInt(100) < 10) {
             return;
         }
-        double dmg = meleeDamage;
-        if (!entity.isOnGround() && entity.getVelocity().getY() < -0.05) {
-            dmg *= 1.5;
-        }
+        double dmg = falling ? meleeDamage * 1.5 : meleeDamage;
+        boolean wasBlocking = target.isBlocking();
+        double hpBefore = target.getHealth() + target.getAbsorptionAmount();
+        Vector prev = target.getVelocity();
         manager.markVictim(target, this);
         target.damage(dmg, entity);
+        boolean blocked = wasBlocking && target.getHealth() + target.getAbsorptionAmount() >= hpBefore;
+        if (blocked) {
+            target.setVelocity(prev);
+            return;
+        }
         if (fireTicks > 0) {
             target.setFireTicks(Math.max(target.getFireTicks(), fireTicks));
         }
