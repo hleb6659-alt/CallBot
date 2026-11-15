@@ -1,10 +1,11 @@
-config-version: 2
+config-version: 3
 
 summon-delay-seconds: 10
 horn-cooldown-seconds: 30
-spawn-distance: 30
-spawn-height: 18
+spawn-distance: 75
+spawn-height: 35
 fly-speed: 0.9
+target-range: 128
 lifetime-seconds: 900
 idle-despawn-seconds: 120
 
@@ -26,3 +27,15 @@ bots:
     enabled: true
     name: TheoBaldTheBird
     skin: TheoBaldTheBird
+    chance: 50
+  wemmbu:
+    enabled: true
+    name: Wemmbu
+    skin: Wemmbu
+    chance: 50
+    gapples: 10
+    enchanted-gapples: 3
+    pearls: 16
+    wind-charges: 128
+    fireworks: 32
+    totems: 1

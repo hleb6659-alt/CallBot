@@ -11,7 +11,7 @@ public final class CallBotPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        if (getConfig().getInt("config-version", 1) < 2) {
+        if (getConfig().getInt("config-version", 1) < 3) {
             saveResource("config.yml", true);
             reloadConfig();
         }

@@ -14,7 +14,11 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ArmorMeta;
 import org.bukkit.inventory.meta.CrossbowMeta;
+import org.bukkit.inventory.meta.trim.ArmorTrim;
+import org.bukkit.inventory.meta.trim.TrimMaterial;
+import org.bukkit.inventory.meta.trim.TrimPattern;
 import org.bukkit.util.Vector;
 
 import java.util.UUID;
@@ -62,7 +66,10 @@ public final class TheoBot extends PvpBot {
         if (blast) {
             it.addUnsafeEnchantment(Enchantment.BLAST_PROTECTION, 4);
         }
-        it.editMeta(meta -> meta.setUnbreakable(true));
+        it.editMeta(ArmorMeta.class, meta -> {
+            meta.setUnbreakable(true);
+            meta.setTrim(new ArmorTrim(TrimMaterial.GOLD, TrimPattern.SENTRY));
+        });
         return it;
     }
 

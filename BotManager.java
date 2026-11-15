@@ -1,6 +1,9 @@
 package me.prime.callbot;
 
+import com.destroystokyo.paper.profile.ProfileProperty;
+import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -32,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class BotManager implements Listener {
 
@@ -50,12 +54,17 @@ public final class BotManager implements Listener {
     private final Map<UUID, Victim> victims = new HashMap<>();
     private final List<BotType> types = new ArrayList<>();
     private final Random random = new Random();
+    private final Map<String, ResolvableProfile> skins = new ConcurrentHashMap<>();
     private BukkitTask task;
 
     public BotManager(CallBotPlugin plugin) {
         this.plugin = plugin;
         this.markKey = new NamespacedKey(plugin, "call_bot_mark");
         addType("theo", "TheoBaldTheBird", TheoBot::new);
+        addType("wemmbu", "Wemmbu", WemmbuBot::new);
+        for (BotType t : types) {
+            loadSkin(t.skin());
+        }
     }
 
     private void addType(String id, String defaultName, BotType.Factory factory) {
@@ -65,7 +74,33 @@ public final class BotManager implements Listener {
         }
         String name = s == null ? defaultName : s.getString("name", defaultName);
         String skin = s == null ? name : s.getString("skin", name);
-        types.add(new BotType(id, name, skin, factory));
+        int weight = s == null ? 50 : Math.max(0, s.getInt("chance", 50));
+        if (weight > 0) {
+            types.add(new BotType(id, name, skin, weight, factory));
+        }
+    }
+
+    private void loadSkin(String name) {
+        Bukkit.createProfile(name).update().thenAccept(p -> {
+            var builder = ResolvableProfile.resolvableProfile();
+            if (p.getId() != null) {
+                builder.uuid(p.getId());
+            }
+            if (p.getName() != null) {
+                builder.name(p.getName());
+            }
+            for (ProfileProperty prop : p.getProperties()) {
+                builder.addProperty(prop);
+            }
+            skins.put(name.toLowerCase(), builder.build());
+        }).exceptionally(ex -> {
+            plugin.getLogger().warning("Не удалось загрузить скин " + name + ": " + ex);
+            return null;
+        });
+    }
+
+    public ResolvableProfile skin(String name) {
+        return skins.get(name.toLowerCase());
     }
 
     public void start() {
@@ -127,18 +162,31 @@ public final class BotManager implements Listener {
                 pool.add(p);
             }
         }
-        Player anchor = pool.isEmpty() ? summoner : pool.get(random.nextInt(pool.size()));
+        Player anchor = summoner != null && summoner.isOnline() ? summoner
+                : (pool.isEmpty() ? null : pool.get(random.nextInt(pool.size())));
         if (anchor == null) {
             return;
         }
-        BotType type = types.get(random.nextInt(types.size()));
+        int total = 0;
+        for (BotType bt : types) {
+            total += bt.weight();
+        }
+        int roll = random.nextInt(total);
+        BotType type = types.get(0);
+        for (BotType bt : types) {
+            if (roll < bt.weight()) {
+                type = bt;
+                break;
+            }
+            roll -= bt.weight();
+        }
         PvpBot bot = type.factory().create(plugin, this, type, summonerId);
         World w = anchor.getWorld();
         Location spawn = null;
         boolean flying = false;
         if (!w.hasCeiling()) {
             int sim = Math.max(2, anchor.getSimulationDistance());
-            double dist = Math.min(plugin.getConfig().getDouble("spawn-distance", 30), Math.max(14, sim * 16 - 24));
+            double dist = Math.min(plugin.getConfig().getDouble("spawn-distance", 75), Math.max(14, sim * 16 - 24));
             for (int i = 0; i < 4 && spawn == null; i++) {
                 double ang = random.nextDouble() * Math.PI * 2;
                 double x = anchor.getX() + Math.cos(ang) * dist;
@@ -147,7 +195,7 @@ public final class BotManager implements Listener {
                 int bz = (int) Math.floor(z);
                 if (w.isChunkLoaded(bx >> 4, bz >> 4)) {
                     int ground = w.getHighestBlockYAt(bx, bz);
-                    double y = Math.max(anchor.getY() + plugin.getConfig().getDouble("spawn-height", 18), ground + 12);
+                    double y = Math.max(anchor.getY() + plugin.getConfig().getDouble("spawn-height", 35), ground + 12);
                     y = Math.min(y, w.getMaxHeight() - 3);
                     spawn = new Location(w, x, y, z);
                     flying = true;
@@ -163,6 +211,7 @@ public final class BotManager implements Listener {
         bot.spawn(spawn, flying);
         if (bot.isAlive()) {
             bots.put(bot.id(), bot);
+            Bukkit.broadcast(Component.text(type.name() + " joined the game", NamedTextColor.YELLOW));
         }
     }
 

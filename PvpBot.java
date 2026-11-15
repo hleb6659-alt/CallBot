@@ -142,7 +142,9 @@ public abstract class PvpBot {
             } catch (Throwable ignored) {
             }
             try {
-                m.setProfile(ResolvableProfile.resolvableProfile().name(type.skin()).build());
+                ResolvableProfile cached = manager.skin(type.skin());
+                m.setProfile(cached != null ? cached
+                        : ResolvableProfile.resolvableProfile().name(type.skin()).build());
             } catch (Throwable t) {
                 plugin.getLogger().warning("Не удалось задать скин " + type.skin() + ": " + t);
             }
@@ -163,7 +165,7 @@ public abstract class PvpBot {
         }
     }
 
-    private ItemStack elytra() {
+    protected ItemStack elytra() {
         ItemStack e = new ItemStack(Material.ELYTRA);
         e.editMeta(m -> m.setUnbreakable(true));
         return e;
@@ -225,6 +227,10 @@ public abstract class PvpBot {
                 continue;
             }
             double d = p.getLocation().distanceSquared(me);
+            double range = plugin.getConfig().getDouble("target-range", 128);
+            if (d > range * range) {
+                continue;
+            }
             if (p == target) {
                 d *= 0.6;
             }
@@ -673,7 +679,7 @@ public abstract class PvpBot {
         entity.setRotation(yaw, pitch);
     }
 
-    private void lookAlong(Vector v) {
+    protected void lookAlong(Vector v) {
         double h = Math.hypot(v.getX(), v.getZ());
         float yaw = (float) Math.toDegrees(Math.atan2(-v.getX(), v.getZ()));
         float pitch = (float) -Math.toDegrees(Math.atan2(v.getY(), h));
