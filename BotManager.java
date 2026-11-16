@@ -21,6 +21,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
@@ -62,6 +63,9 @@ public final class BotManager implements Listener {
         this.markKey = new NamespacedKey(plugin, "call_bot_mark");
         addType("theo", "TheoBaldTheBird", TheoBot::new);
         addType("wemmbu", "Wemmbu", WemmbuBot::new);
+        addType("flamefrags", "FlameFrags", FlameFragsBot::new);
+        addType("parrotx2", "ParrotX2", ParrotX2Bot::new);
+        addType("manepear", "Manepear", ManepearBot::new);
         for (BotType t : types) {
             loadSkin(t.skin());
         }
@@ -244,7 +248,15 @@ public final class BotManager implements Listener {
         bot.dispose();
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onHit(EntityDamageByEntityEvent e) {
+        PvpBot bot = bots.get(e.getEntity().getUniqueId());
+        if (bot != null) {
+            bot.onAttacked(e);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
     public void onDamage(EntityDamageEvent e) {
         PvpBot bot = bots.get(e.getEntity().getUniqueId());
         if (bot != null) {

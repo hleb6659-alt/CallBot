@@ -17,6 +17,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Mannequin;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
@@ -24,6 +25,8 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
@@ -51,6 +54,11 @@ public abstract class PvpBot {
     protected boolean offhandTotem;
     private boolean eatingEnchanted;
 
+    private final List<Vector> path = new ArrayList<>();
+    private int repathCd, stuckTicks, pathHold;
+    private Location lastPos;
+    private boolean pathJump, pathActive;
+
     private EnderPearl pearl;
     private Location pearlOrigin, pearlLast;
     private boolean pearlAggressive;
@@ -74,6 +82,32 @@ public abstract class PvpBot {
 
     protected double preferredRange() {
         return reach() - 0.7;
+    }
+
+    protected ItemStack offhandItem() {
+        return offhandTotem ? new ItemStack(Material.TOTEM_OF_UNDYING) : null;
+    }
+
+    protected void afterHit() {
+    }
+
+    public void onAttacked(EntityDamageByEntityEvent e) {
+    }
+
+    protected double speed() {
+        return 0.23;
+    }
+
+    protected double strafeWeight() {
+        return 0.2;
+    }
+
+    protected boolean alwaysStrafe() {
+        return false;
+    }
+
+    protected boolean canMelee() {
+        return true;
     }
 
     protected boolean busy() {
@@ -178,7 +212,7 @@ public abstract class PvpBot {
         eq.setLeggings(leggings);
         eq.setBoots(boots);
         eq.setItemInMainHand(weapon);
-        eq.setItemInOffHand(offhandTotem ? new ItemStack(Material.TOTEM_OF_UNDYING) : null);
+        eq.setItemInOffHand(offhandItem());
     }
 
     protected void holdWeapon() {
@@ -384,7 +418,7 @@ public abstract class PvpBot {
         }
     }
 
-    private boolean pearlReady() {
+    protected boolean pearlReady() {
         return pearls > 0 && pearlCd <= 0 && pearl == null && eatTicks == 0 && !busy();
     }
 
@@ -392,7 +426,7 @@ public abstract class PvpBot {
         return pearl != null;
     }
 
-    private Location pickEscape() {
+    protected Location pickEscape() {
         Location me = entity.getLocation();
         Location tl = target.getLocation();
         World w = me.getWorld();
@@ -419,7 +453,7 @@ public abstract class PvpBot {
         return null;
     }
 
-    private void throwPearl(Location to, boolean aggressive) {
+    protected void throwPearl(Location to, boolean aggressive) {
         Location eye = entity.getEyeLocation();
         double dx = to.getX() - eye.getX();
         double dz = to.getZ() - eye.getZ();
@@ -564,7 +598,7 @@ public abstract class PvpBot {
         fwd.multiply(1.0 / len);
         Vector side = new Vector(-fwd.getZ(), 0, fwd.getX());
         if (--strafeTimer <= 0) {
-            strafeDir = random.nextInt(3) - 1;
+            strafeDir = alwaysStrafe() ? (random.nextBoolean() ? 1 : -1) : random.nextInt(3) - 1;
             strafeTimer = 20 + random.nextInt(40);
         }
         double range = preferredRange();
@@ -578,20 +612,91 @@ public abstract class PvpBot {
         } else {
             f = 0.1;
         }
-        Vector m = fwd.clone().multiply(f).add(side.clone().multiply(strafeDir * 0.2));
+        Vector dir = fwd;
+        pathActive = false;
+        if (f > 0 && dist > reach() + 0.5) {
+            dir = heading(fwd);
+        }
+        double strafe = pathActive ? 0.0 : strafeDir * strafeWeight();
+        Vector m = dir.clone().multiply(f).add(side.clone().multiply(strafe));
+        if (f < 0 && wallAhead(m)) {
+            m = side.clone().multiply(strafeDir == 0 ? 1 : strafeDir);
+        }
         if (m.length() > 1.0) {
             m.normalize();
         }
-        m.multiply(eatTicks > 0 ? 0.18 : 0.23);
+        m.multiply(eatTicks > 0 ? 0.18 : speed());
         Vector v = entity.getVelocity();
         v.setX(m.getX()).setZ(m.getZ());
-        if (entity.isOnGround() && blocked(m)) {
+        if (entity.isOnGround() && (pathJump || blocked(m))) {
             v.setY(0.42);
+            pathJump = false;
         }
         if (entity.isInWater()) {
             v.setY(Math.max(v.getY(), 0.12));
         }
         entity.setVelocity(v);
+    }
+
+    protected Vector heading(Vector direct) {
+        Location pos = entity.getLocation();
+        if (lastPos != null && lastPos.getWorld() == pos.getWorld()
+                && lastPos.distanceSquared(pos) < 0.0036 && entity.isOnGround()) {
+            stuckTicks++;
+        } else {
+            stuckTicks = 0;
+        }
+        lastPos = pos;
+        if (pathHold > 0) {
+            pathHold--;
+        }
+        if (stuckTicks >= 12) {
+            pathHold = 40;
+            repathCd = 0;
+            stuckTicks = 0;
+        }
+        boolean los = entity.hasLineOfSight(target);
+        if (los && pathHold <= 0) {
+            path.clear();
+            return direct;
+        }
+        if (--repathCd <= 0) {
+            List<Vector> found = PathFinder.find(entity.getWorld(), pos, target.getLocation(),
+                    plugin.getConfig().getInt("path-max-nodes", 600));
+            path.clear();
+            path.addAll(found);
+            repathCd = 15;
+        }
+        while (!path.isEmpty()) {
+            Vector wp = path.get(0);
+            if (Math.hypot(wp.getX() - pos.getX(), wp.getZ() - pos.getZ()) < 0.6
+                    && Math.abs(wp.getY() - pos.getY()) < 1.3) {
+                path.remove(0);
+            } else {
+                break;
+            }
+        }
+        if (path.isEmpty()) {
+            return direct;
+        }
+        Vector wp = path.get(0);
+        Vector h = new Vector(wp.getX() - pos.getX(), 0, wp.getZ() - pos.getZ());
+        if (h.lengthSquared() < 1e-4) {
+            return direct;
+        }
+        pathActive = true;
+        if (wp.getY() > pos.getY() + 0.6) {
+            pathJump = true;
+        }
+        return h.normalize();
+    }
+
+    private boolean wallAhead(Vector m) {
+        if (m.lengthSquared() < 1e-4) {
+            return false;
+        }
+        Block feet = entity.getLocation().add(m.clone().normalize().multiply(0.8)).getBlock();
+        return !feet.isPassable() && !feet.getRelative(BlockFace.UP).isPassable();
     }
 
     private boolean blocked(Vector m) {
@@ -607,6 +712,9 @@ public abstract class PvpBot {
     private void melee(double dist) {
         if (attackCd > 0) {
             attackCd--;
+        }
+        if (!canMelee()) {
+            return;
         }
         if (eatTicks > 0 || attackCd > 0 || dist > reach()) {
             critWait = 0;
@@ -640,6 +748,7 @@ public abstract class PvpBot {
         boolean blocked = wasBlocking && target.getHealth() + target.getAbsorptionAmount() >= hpBefore;
         if (blocked) {
             target.setVelocity(prev);
+            afterHit();
             return;
         }
         if (fireTicks > 0) {
@@ -652,6 +761,7 @@ public abstract class PvpBot {
                 target.setVelocity(target.getVelocity().add(kb));
             }
         }
+        afterHit();
     }
 
     protected void holdStill() {
@@ -686,7 +796,7 @@ public abstract class PvpBot {
         entity.setRotation(yaw, pitch);
     }
 
-    private double groundDistance(Location pos) {
+    protected double groundDistance(Location pos) {
         RayTraceResult r = pos.getWorld().rayTraceBlocks(pos, new Vector(0, -1, 0), 64,
                 FluidCollisionMode.NEVER, true);
         return r == null ? 64 : pos.getY() - r.getHitPosition().getY();

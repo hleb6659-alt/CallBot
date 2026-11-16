@@ -23,11 +23,11 @@ import org.bukkit.util.Vector;
 
 import java.util.UUID;
 
-public final class TheoBot extends PvpBot {
+public class TheoBot extends PvpBot {
 
     private final ItemStack bow;
     private final ItemStack crossbow;
-    private Sequence seq;
+    Sequence seq;
     private int cartCd = 40;
 
     public TheoBot(CallBotPlugin plugin, BotManager manager, BotType type, UUID summoner) {
@@ -43,6 +43,7 @@ public final class TheoBot extends PvpBot {
         sword.addUnsafeEnchantment(Enchantment.KNOCKBACK, 1);
         sword.editMeta(m -> m.setUnbreakable(true));
         weapon = sword;
+        eapples = plugin.getConfig().getInt("bots.theo.enchanted-gapples", 5);
         meleeDamage = 11.0;
         fireTicks = 160;
         knockbackBonus = 0.35;
@@ -126,15 +127,15 @@ public final class TheoBot extends PvpBot {
         return true;
     }
 
-    private void hold(ItemStack item) {
+    void hold(ItemStack item) {
         entity.getEquipment().setItemInMainHand(item);
     }
 
-    private void freeze() {
+    void freeze() {
         holdStill();
     }
 
-    private Vector flatDir() {
+    Vector flatDir() {
         Location me = entity.getLocation();
         Location tl = target.getLocation();
         Vector d = new Vector(tl.getX() - me.getX(), 0, tl.getZ() - me.getZ());
@@ -144,7 +145,7 @@ public final class TheoBot extends PvpBot {
         return d.normalize();
     }
 
-    private Block column(Vector dir, double d) {
+    Block column(Vector dir, double d) {
         Location o = entity.getLocation();
         World w = o.getWorld();
         int x = (int) Math.floor(o.getX() + dir.getX() * d);
@@ -162,13 +163,13 @@ public final class TheoBot extends PvpBot {
         return null;
     }
 
-    private void place(Block b, Material m) {
+    void place(Block b, Material m) {
         b.setType(m, false);
         entity.swingMainHand();
         b.getWorld().playSound(b.getLocation(), "block.stone.place", SoundCategory.BLOCKS, 1f, 1f);
     }
 
-    private Entity spawnCart(Location c) {
+    Entity spawnCart(Location c) {
         Entity cart = c.getWorld().spawnEntity(c, EntityType.TNT_MINECART);
         manager.mark(cart);
         cart.setPersistent(false);
@@ -176,7 +177,7 @@ public final class TheoBot extends PvpBot {
         return cart;
     }
 
-    private Arrow shoot(Location to, double speed) {
+    Arrow shoot(Location to, double speed) {
         Location eye = entity.getEyeLocation();
         Vector dir = to.toVector().subtract(eye.toVector()).normalize();
         Arrow a = entity.launchProjectile(Arrow.class, dir.multiply(speed));
@@ -187,7 +188,7 @@ public final class TheoBot extends PvpBot {
         return a;
     }
 
-    private void blast(Location c) {
+    void blast(Location c) {
         float power = (float) plugin.getConfig().getDouble("cart-explosion-power", 4.0);
         boolean grief = plugin.getConfig().getBoolean("cart-block-damage", false);
         for (Player p : c.getWorld().getPlayers()) {
@@ -198,13 +199,13 @@ public final class TheoBot extends PvpBot {
         c.getWorld().createExplosion(c, power, false, grief, entity);
     }
 
-    private void restore(Block b, BlockData old, Material expect) {
+    void restore(Block b, BlockData old, Material expect) {
         if (b != null && old != null && b.getType() == expect) {
             b.setBlockData(old, false);
         }
     }
 
-    private abstract class Sequence {
+    abstract class Sequence {
         int t;
 
         abstract boolean prepare(double dist);
@@ -214,7 +215,7 @@ public final class TheoBot extends PvpBot {
         abstract void cleanup();
     }
 
-    private final class Insta extends Sequence {
+    final class Insta extends Sequence {
         Block rail;
         BlockData old;
         Entity cart;
