@@ -28,6 +28,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
@@ -156,67 +157,79 @@ public final class BotManager implements Listener {
     }
 
     private void summon(UUID summonerId) {
-        if (types.isEmpty()) {
+        Player owner = Bukkit.getPlayer(summonerId);
+        if (owner == null || types.isEmpty()) {
             return;
         }
-        Player summoner = Bukkit.getPlayer(summonerId);
-        List<Player> pool = new ArrayList<>();
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (PvpBot.validTarget(p, summonerId)) {
-                pool.add(p);
-            }
-        }
-        Player anchor = summoner != null && summoner.isOnline() ? summoner
-                : (pool.isEmpty() ? null : pool.get(random.nextInt(pool.size())));
-        if (anchor == null) {
-            return;
-        }
-        int total = 0;
-        for (BotType bt : types) {
-            total += bt.weight();
-        }
-        int roll = random.nextInt(total);
-        BotType type = types.get(0);
-        for (BotType bt : types) {
-            if (roll < bt.weight()) {
-                type = bt;
-                break;
-            }
-            roll -= bt.weight();
-        }
-        PvpBot bot = type.factory().create(plugin, this, type, summonerId);
-        World w = anchor.getWorld();
-        Location spawn = null;
-        boolean flying = false;
-        if (!w.hasCeiling()) {
-            int sim = Math.max(2, anchor.getSimulationDistance());
-            double dist = Math.min(plugin.getConfig().getDouble("spawn-distance", 75), Math.max(14, sim * 16 - 24));
-            for (int i = 0; i < 4 && spawn == null; i++) {
-                double ang = random.nextDouble() * Math.PI * 2;
-                double x = anchor.getX() + Math.cos(ang) * dist;
-                double z = anchor.getZ() + Math.sin(ang) * dist;
-                int bx = (int) Math.floor(x);
-                int bz = (int) Math.floor(z);
-                if (w.isChunkLoaded(bx >> 4, bz >> 4)) {
-                    int ground = w.getHighestBlockYAt(bx, bz);
-                    double y = Math.max(anchor.getY() + plugin.getConfig().getDouble("spawn-height", 35), ground + 12);
-                    y = Math.min(y, w.getMaxHeight() - 3);
-                    spawn = new Location(w, x, y, z);
-                    flying = true;
-                } else {
-                    dist = Math.max(10, dist * 0.7);
+        Location spawn = behind(owner);
+        for (BotType type : weightedOrder()) {
+            PvpBot bot = null;
+            try {
+                bot = type.factory().create(plugin, this, type, summonerId);
+                bot.spawn(spawn, false);
+                if (bot.isAlive()) {
+                    bots.put(bot.id(), bot);
+                    Bukkit.broadcast(Component.text(type.name() + " joined the game", NamedTextColor.YELLOW));
+                    return;
+                }
+            } catch (Throwable t) {
+                plugin.getLogger().severe("Не удалось призвать " + type.name() + ": " + t);
+                t.printStackTrace();
+                if (bot != null) {
+                    try {
+                        bot.dispose();
+                    } catch (Throwable ignored) {
+                    }
                 }
             }
         }
-        if (spawn == null) {
-            double ang = random.nextDouble() * Math.PI * 2;
-            spawn = anchor.getLocation().add(Math.cos(ang) * 12, 0, Math.sin(ang) * 12);
+        owner.sendMessage(Component.text("Не удалось призвать бота, подробности в консоли", NamedTextColor.RED));
+    }
+
+    private List<BotType> weightedOrder() {
+        List<BotType> pool = new ArrayList<>(types);
+        List<BotType> out = new ArrayList<>();
+        while (!pool.isEmpty()) {
+            int total = 0;
+            for (BotType t : pool) {
+                total += t.weight();
+            }
+            int roll = random.nextInt(total);
+            BotType pick = pool.get(0);
+            for (BotType t : pool) {
+                if (roll < t.weight()) {
+                    pick = t;
+                    break;
+                }
+                roll -= t.weight();
+            }
+            out.add(pick);
+            pool.remove(pick);
         }
-        bot.spawn(spawn, flying);
-        if (bot.isAlive()) {
-            bots.put(bot.id(), bot);
-            Bukkit.broadcast(Component.text(type.name() + " joined the game", NamedTextColor.YELLOW));
+        return out;
+    }
+
+    private Location behind(Player owner) {
+        Location ol = owner.getLocation();
+        Vector back = ol.getDirection().setY(0);
+        if (back.lengthSquared() < 1e-4) {
+            back = new Vector(0, 0, 1);
         }
+        back.normalize().multiply(-5);
+        World w = ol.getWorld();
+        int bx = (int) Math.floor(ol.getX() + back.getX());
+        int bz = (int) Math.floor(ol.getZ() + back.getZ());
+        int by = ol.getBlockY();
+        for (int dy = 3; dy >= -4; dy--) {
+            Block b = w.getBlockAt(bx, by + dy, bz);
+            if (b.isPassable() && !b.isLiquid() && b.getRelative(BlockFace.UP).isPassable()
+                    && !b.getRelative(BlockFace.DOWN).isPassable()) {
+                Location l = new Location(w, bx + 0.5, by + dy, bz + 0.5);
+                l.setDirection(ol.toVector().subtract(l.toVector()));
+                return l;
+            }
+        }
+        return ol.clone().add(back);
     }
 
     private void tick() {

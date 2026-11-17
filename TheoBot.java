@@ -85,6 +85,15 @@ public class TheoBot extends PvpBot {
     }
 
     @Override
+    protected void abortModes() {
+        if (seq != null) {
+            seq.cleanup();
+            seq = null;
+            holdWeapon();
+        }
+    }
+
+    @Override
     protected void cleanup() {
         if (seq != null) {
             seq.cleanup();

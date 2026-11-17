@@ -72,6 +72,21 @@ public final class WemmbuBot extends PvpBot {
     }
 
     @Override
+    protected void abortModes() {
+        if (launch != null) {
+            launch.cleanup();
+            launch = null;
+        }
+        diving = false;
+        boostLeft = 0;
+        entity.setGliding(false);
+        entity.getEquipment().setChestplate(chestplate);
+        holdWeapon();
+        mode = Mode.GROUND;
+        groundTicks = 40;
+    }
+
+    @Override
     protected void cleanup() {
         if (launch != null) {
             launch.cleanup();

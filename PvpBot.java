@@ -88,6 +88,9 @@ public abstract class PvpBot {
         return offhandTotem ? new ItemStack(Material.TOTEM_OF_UNDYING) : null;
     }
 
+    protected void abortModes() {
+    }
+
     protected void afterHit() {
     }
 
@@ -261,7 +264,7 @@ public abstract class PvpBot {
                 continue;
             }
             double d = p.getLocation().distanceSquared(me);
-            double range = plugin.getConfig().getDouble("target-range", 128);
+            double range = plugin.getConfig().getDouble("enemy-range", 100);
             if (d > range * range) {
                 continue;
             }
@@ -359,11 +362,11 @@ public abstract class PvpBot {
             return;
         }
         if (target == null) {
-            holdStill();
-            tickPearl();
-            if (++idleTicks > plugin.getConfig().getInt("idle-despawn-seconds", 120) * 20) {
-                dispose();
+            if (busy()) {
+                abortModes();
             }
+            tickPearl();
+            follow();
             return;
         }
         idleTicks = 0;
@@ -638,7 +641,56 @@ public abstract class PvpBot {
         entity.setVelocity(v);
     }
 
+    private void follow() {
+        Player owner = Bukkit.getPlayer(summoner);
+        if (owner == null || !owner.isOnline() || owner.getWorld() != entity.getWorld()) {
+            holdStill();
+            if (++idleTicks > plugin.getConfig().getInt("idle-despawn-seconds", 120) * 20) {
+                dispose();
+            }
+            return;
+        }
+        idleTicks = 0;
+        if (!entity.isOnGround()) {
+            entity.setFallDistance(0f);
+        }
+        Location pos = entity.getLocation();
+        Location ol = owner.getLocation();
+        double dist = pos.distance(ol);
+        if (dist > 40) {
+            entity.teleport(ol.clone().add(ol.getDirection().setY(0).multiply(-3)));
+            return;
+        }
+        face(ol.clone().add(0, 1.6, 0), 30f);
+        if (dist <= 3.5) {
+            holdStill();
+            return;
+        }
+        Vector dir = new Vector(ol.getX() - pos.getX(), 0, ol.getZ() - pos.getZ());
+        double len = dir.length();
+        if (len > 1e-3) {
+            dir.multiply(1.0 / len);
+        }
+        pathActive = false;
+        dir = heading(dir, owner);
+        double sp = dist > 10 ? 0.34 : 0.26;
+        Vector v = entity.getVelocity();
+        v.setX(dir.getX() * sp).setZ(dir.getZ() * sp);
+        if (entity.isOnGround() && (pathJump || blocked(dir))) {
+            v.setY(0.42);
+            pathJump = false;
+        }
+        if (entity.isInWater()) {
+            v.setY(Math.max(v.getY(), 0.12));
+        }
+        entity.setVelocity(v);
+    }
+
     protected Vector heading(Vector direct) {
+        return heading(direct, target);
+    }
+
+    protected Vector heading(Vector direct, Player goal) {
         Location pos = entity.getLocation();
         if (lastPos != null && lastPos.getWorld() == pos.getWorld()
                 && lastPos.distanceSquared(pos) < 0.0036 && entity.isOnGround()) {
@@ -655,13 +707,13 @@ public abstract class PvpBot {
             repathCd = 0;
             stuckTicks = 0;
         }
-        boolean los = entity.hasLineOfSight(target);
+        boolean los = entity.hasLineOfSight(goal);
         if (los && pathHold <= 0) {
             path.clear();
             return direct;
         }
         if (--repathCd <= 0) {
-            List<Vector> found = PathFinder.find(entity.getWorld(), pos, target.getLocation(),
+            List<Vector> found = PathFinder.find(entity.getWorld(), pos, goal.getLocation(),
                     plugin.getConfig().getInt("path-max-nodes", 600));
             path.clear();
             path.addAll(found);

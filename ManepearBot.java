@@ -98,8 +98,15 @@ public final class ManepearBot extends PvpBot {
     }
 
     @Override
+    protected void abortModes() {
+        toGround();
+    }
+
+    @Override
     protected void cleanup() {
-        entity.clearActiveItem();
+        if (entity != null) {
+            entity.clearActiveItem();
+        }
     }
 
     @Override

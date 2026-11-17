@@ -88,6 +88,12 @@ public final class ParrotX2Bot extends PvpBot {
     }
 
     @Override
+    protected void abortModes() {
+        hopping = false;
+        holdWeapon();
+    }
+
+    @Override
     protected double preferredRange() {
         return style == Style.CROSSBOW ? 9.0 : super.preferredRange();
     }
