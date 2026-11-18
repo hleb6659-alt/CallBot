@@ -68,7 +68,7 @@ public final class BotManager implements Listener {
         addType("parrotx2", "ParrotX2", ParrotX2Bot::new);
         addType("manepear", "Manepear", ManepearBot::new);
         for (BotType t : types) {
-            loadSkin(t.skin());
+            loadSkin(t);
         }
     }
 
@@ -85,7 +85,20 @@ public final class BotManager implements Listener {
         }
     }
 
-    private void loadSkin(String name) {
+    private void loadSkin(BotType t) {
+        String name = t.skin();
+        ConfigurationSection s = plugin.getConfig().getConfigurationSection("bots." + t.id());
+        String value = s == null ? "" : s.getString("skin-value", "");
+        if (!value.isEmpty()) {
+            String sig = s.getString("skin-signature", "");
+            var builder = ResolvableProfile.resolvableProfile();
+            builder.uuid(UUID.nameUUIDFromBytes(("callbot:" + name).getBytes()));
+            builder.name(name);
+            builder.addProperty(new ProfileProperty("textures", value, sig.isEmpty() ? null : sig));
+            skins.put(name.toLowerCase(), builder.build());
+            plugin.getLogger().info("Скин " + name + " взят из конфига");
+            return;
+        }
         Bukkit.createProfile(name).update().thenAccept(p -> {
             var builder = ResolvableProfile.resolvableProfile();
             if (p.getId() != null) {
@@ -98,6 +111,8 @@ public final class BotManager implements Listener {
                 builder.addProperty(prop);
             }
             skins.put(name.toLowerCase(), builder.build());
+            plugin.getLogger().info("Скин " + name + (p.getProperties().isEmpty()
+                    ? ": текстур не найдено, проверь ник" : " загружен"));
         }).exceptionally(ex -> {
             plugin.getLogger().warning("Не удалось загрузить скин " + name + ": " + ex);
             return null;

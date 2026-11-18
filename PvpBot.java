@@ -192,6 +192,15 @@ public abstract class PvpBot {
             m.setHealth(20.0);
             manager.mark(m);
         });
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            ResolvableProfile skin = manager.skin(type.skin());
+            if (isAlive() && skin != null) {
+                try {
+                    entity.setProfile(skin);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, 5L);
         if (flying) {
             state = State.FLYING;
             equip(elytra());

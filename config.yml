@@ -23,6 +23,8 @@ xbow-chance: 0.30
 cart-explosion-power: 4.0
 cart-block-damage: false
 
+# Если скин по нику не подтягивается, можно задать текстуру вручную:
+# skin-value: <textures value>, skin-signature: <подпись> у нужного бота
 bots:
   theo:
     enabled: true

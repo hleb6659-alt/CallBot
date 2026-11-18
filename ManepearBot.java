@@ -6,7 +6,6 @@ import org.bukkit.SoundCategory;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.ThrownPotion;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.potion.PotionEffect;
@@ -227,9 +226,6 @@ public final class ManepearBot extends PvpBot {
     private void chargeTick() {
         holdStill();
         face(target.getLocation().add(0, 1.0, 0), 80f);
-        if (modeT == 1) {
-            entity.startUsingItem(EquipmentSlot.HAND);
-        }
         if (modeT >= 12) {
             setMode(Mode.DASH);
         }
@@ -322,7 +318,6 @@ public final class ManepearBot extends PvpBot {
 
         if (!diving && (fireworks <= 0 || (dy >= climbAlt - 4 && dh < 26))) {
             diving = true;
-            entity.startUsingItem(EquipmentSlot.HAND);
         }
         if (diving) {
             Vector v = new Vector(dx, tl.getY() + 1.0 - pos.getY(), dz);
