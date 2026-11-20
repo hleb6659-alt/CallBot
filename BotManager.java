@@ -85,6 +85,7 @@ public final class BotManager implements Listener {
         addType("manepear", "Manepear", ManepearBot::new);
         addType("shoebilly", "ShoeBilly_", ShoeBillyBot::new);
         addType("spook", "SpokeIsHere", SpookBot::new);
+        addType("lettuce", "lettuceK", LettuceBot::new);
         for (BotType t : types) {
             loadSkin(t);
         }

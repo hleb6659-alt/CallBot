@@ -91,3 +91,14 @@ bots:
     army-privates: 8
     army-generals: 7
     army-commanders: 1
+  lettuce:
+    enabled: true
+    name: lettuceK
+    skin: lettuceK
+    chance: 50
+    gapples: 30
+    enchanted-gapples: 3
+    pearls: 64
+    wind-charges: 128
+    totems: 1
+    army-size: 30
