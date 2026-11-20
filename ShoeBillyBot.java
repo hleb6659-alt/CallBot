@@ -40,8 +40,12 @@ public final class ShoeBillyBot extends PvpBot {
         mc.addUnsafeEnchantment(Enchantment.BREACH, 2);
         mc.editMeta(m -> m.setUnbreakable(true));
         mace = mc;
-        weapon = mc;
-        meleeDamage = 6.0;
+
+        ItemStack sw = new ItemStack(Material.NETHERITE_SWORD);
+        sw.addUnsafeEnchantment(Enchantment.SHARPNESS, 5);
+        sw.editMeta(m -> m.setUnbreakable(true));
+        weapon = sw;
+        meleeDamage = 11.0;
     }
 
     private static ItemStack armor(Material material) {
@@ -131,6 +135,7 @@ public final class ShoeBillyBot extends PvpBot {
         }
         if (n == 1) {
             entity.getEquipment().setChestplate(elytra());
+            entity.getEquipment().setItemInMainHand(mace);
         } else if (n == 3) {
             entity.setVelocity(new Vector(0, 0.6, 0));
         } else if (n == 6) {

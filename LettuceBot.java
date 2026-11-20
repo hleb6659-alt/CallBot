@@ -74,7 +74,7 @@ public final class LettuceBot extends PvpBot {
     }
 
     private void spawnArmy(Location center) {
-        int total = plugin.getConfig().getInt("bots.lettuce.army-size", 30);
+        int total = plugin.getConfig().getInt("bots.lettuce.army-size", 15);
         for (int i = 0; i < total; i++) {
             double ang = i * (Math.PI * 2 / Math.max(1, total)) * 3;
             double r = 3.0 + (i % 3) * 2.0;

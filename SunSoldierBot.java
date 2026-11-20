@@ -23,6 +23,7 @@ public final class SunSoldierBot extends PvpBot {
     private final ItemStack shield;
     private final ItemStack axe;
     private int shieldDisabled, axeTicks;
+    private boolean useShield;
 
     public SunSoldierBot(CallBotPlugin plugin, BotManager manager, BotType type, UUID summoner) {
         super(plugin, manager, type, summoner);
@@ -77,7 +78,7 @@ public final class SunSoldierBot extends PvpBot {
     }
 
     private boolean shielding() {
-        return shieldDisabled <= 0 && attackCd > 1 && eatTicks == 0;
+        return useShield && shieldDisabled <= 0 && attackCd > 1 && eatTicks == 0;
     }
 
     private void syncShield() {
@@ -97,6 +98,9 @@ public final class SunSoldierBot extends PvpBot {
         }
         if (axeTicks > 0 && --axeTicks == 0) {
             holdWeapon();
+        }
+        if (attackCd == 0) {
+            useShield = random.nextInt(100) < 12;
         }
         syncShield();
         if (eatTicks == 0 && attackCd == 0 && dist <= reach() && target.isBlocking()

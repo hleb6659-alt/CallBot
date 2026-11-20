@@ -7,15 +7,19 @@ public final class CallBotPlugin extends JavaPlugin {
 
     private HornItem horn;
     private BotManager bots;
+    private NullTotems totems;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        if (getConfig().getInt("config-version", 1) < 3) {
+        if (getConfig().getInt("config-version", 1) < 4) {
             saveResource("config.yml", true);
             reloadConfig();
         }
         horn = new HornItem(this);
+        totems = new NullTotems(this);
+        getServer().getPluginManager().registerEvents(totems, this);
+        totems.start();
         bots = new BotManager(this);
         getServer().getPluginManager().registerEvents(bots, this);
         getServer().getPluginManager().registerEvents(new HornListener(this, horn, bots), this);
@@ -27,6 +31,10 @@ public final class CallBotPlugin extends JavaPlugin {
             cmd.setTabCompleter(handler);
         }
         bots.start();
+    }
+
+    public NullTotems totems() {
+        return totems;
     }
 
     @Override

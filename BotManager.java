@@ -4,6 +4,7 @@ import com.destroystokyo.paper.profile.ProfileProperty;
 import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Axis;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -13,8 +14,12 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
+import org.bukkit.block.TileState;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Orientable;
 import org.bukkit.block.sign.Side;
+import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
@@ -26,6 +31,8 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.EntityPortalEvent;
+import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.persistence.PersistentDataType;
@@ -43,9 +50,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -54,6 +63,10 @@ import java.util.regex.Pattern;
 public final class BotManager implements Listener {
 
     private record Victim(int tick, UUID botId, String typeId) {}
+
+    private record PortalBlock(Block block, BlockData old) {}
+
+    private record Portal(Location center, int expire, List<PortalBlock> blocks) {}
 
     private static final BlockFace[] RING = {
             BlockFace.SOUTH, BlockFace.SOUTH_SOUTH_WEST, BlockFace.SOUTH_WEST, BlockFace.WEST_SOUTH_WEST,
@@ -72,6 +85,8 @@ public final class BotManager implements Listener {
     private BukkitTask task;
     private final File skinFile;
     private final YamlConfiguration skinCache;
+    private final Set<String> loading = ConcurrentHashMap.newKeySet();
+    private final List<Portal> portals = new ArrayList<>();
 
     public BotManager(CallBotPlugin plugin) {
         this.plugin = plugin;
@@ -86,8 +101,9 @@ public final class BotManager implements Listener {
         addType("shoebilly", "ShoeBilly_", ShoeBillyBot::new);
         addType("spook", "SpokeIsHere", SpookBot::new);
         addType("lettuce", "lettuceK", LettuceBot::new);
+        addType("clownpierce", "ClownPierce", ClownPierceBot::new);
         for (BotType t : types) {
-            loadSkin(t);
+            loadSkin(t, null, 0);
         }
     }
 
@@ -104,9 +120,38 @@ public final class BotManager implements Listener {
         }
     }
 
-    private void loadSkin(BotType t) {
+    public void ensureSkin(BotType t) {
+        if (t.skin() == null || t.skin().isEmpty() || skins.containsKey(t.skin().toLowerCase())) {
+            return;
+        }
+        loadSkin(t, null, 0);
+    }
+
+    public void reloadSkins(CommandSender sender) {
+        int have = 0;
+        for (BotType t : types) {
+            if (skins.containsKey(t.skin().toLowerCase())) {
+                have++;
+                continue;
+            }
+            note(sender, "Запрашиваю скин " + t.skin() + "...", NamedTextColor.GRAY);
+            loadSkin(t, sender, 0);
+        }
+        note(sender, "Скины уже загружены: " + have + " из " + types.size(), NamedTextColor.YELLOW);
+    }
+
+    private void note(CommandSender s, String text, NamedTextColor color) {
+        if (s != null) {
+            s.sendMessage(Component.text(text, color));
+        }
+    }
+
+    private void loadSkin(BotType t, CommandSender notify, int attempt) {
         String name = t.skin();
         String key = name.toLowerCase();
+        if (attempt > 0 && skins.containsKey(key)) {
+            return;
+        }
         ConfigurationSection s = plugin.getConfig().getConfigurationSection("bots." + t.id());
         String manual = s == null ? "" : s.getString("skin-value", "");
         if (!manual.isEmpty()) {
@@ -119,12 +164,17 @@ public final class BotManager implements Listener {
             applySkin(name, cached, skinCache.getString("skins." + key + ".signature", ""),
                     skinCache.getString("skins." + key + ".id", ""));
             plugin.getLogger().info("Скин " + name + " взят из кэша skins.yml");
+            note(notify, "Скин " + name + " взят из кэша", NamedTextColor.GREEN);
+            return;
+        }
+        if (!loading.add(key)) {
             return;
         }
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 String[] r = fetchMojang(name);
                 Bukkit.getScheduler().runTask(plugin, () -> {
+                    loading.remove(key);
                     skinCache.set("skins." + key + ".id", r[0]);
                     skinCache.set("skins." + key + ".value", r[1]);
                     skinCache.set("skins." + key + ".signature", r[2]);
@@ -135,29 +185,50 @@ public final class BotManager implements Listener {
                     }
                     applySkin(name, r[1], r[2], r[0]);
                     plugin.getLogger().info("Скин " + name + " загружен с серверов Mojang");
+                    note(notify, "Скин " + name + " загружен", NamedTextColor.GREEN);
                 });
             } catch (Exception ex) {
-                plugin.getLogger().warning("Скин " + name + ": не удалось получить с серверов Mojang (" + ex + ")");
-                Bukkit.getScheduler().runTask(plugin, () -> loadSkinViaBukkit(name));
+                String why = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    loading.remove(key);
+                    plugin.getLogger().warning("Скин " + name + ": " + why + " (попытка " + (attempt + 1) + ")");
+                    note(notify, "Скин " + name + ": " + why, NamedTextColor.RED);
+                    if (attempt == 0) {
+                        loadSkinViaBukkit(name);
+                    }
+                    if (attempt < 3) {
+                        Bukkit.getScheduler().runTaskLater(plugin, () -> loadSkin(t, null, attempt + 1), 1200L);
+                    }
+                });
             }
         });
     }
 
     private String[] fetchMojang(String name) throws Exception {
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
-        String r1 = client.send(HttpRequest.newBuilder(URI.create(
+        HttpResponse<String> first = client.send(HttpRequest.newBuilder(URI.create(
                 "https://api.mojang.com/users/profiles/minecraft/" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
-                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString()).body();
-        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"").matcher(r1);
+                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString());
+        if (first.statusCode() == 404 || first.statusCode() == 204) {
+            throw new IllegalStateException("такого ника нет в Minecraft, проверь написание");
+        }
+        if (first.statusCode() != 200) {
+            throw new IllegalStateException("Mojang ответил HTTP " + first.statusCode());
+        }
+        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"").matcher(first.body());
         if (!m.find()) {
-            throw new IllegalStateException("ник не найден");
+            throw new IllegalStateException("не удалось прочитать ответ Mojang");
         }
         String id = m.group(1);
-        String r2 = client.send(HttpRequest.newBuilder(URI.create(
+        HttpResponse<String> second = client.send(HttpRequest.newBuilder(URI.create(
                 "https://sessionserver.mojang.com/session/minecraft/profile/" + id + "?unsigned=false"))
-                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString()).body();
-        Matcher v = Pattern.compile("\"value\"\\s*:\\s*\"([^\"]+)\"").matcher(r2);
-        Matcher sg = Pattern.compile("\"signature\"\\s*:\\s*\"([^\"]+)\"").matcher(r2);
+                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString());
+        if (second.statusCode() != 200) {
+            throw new IllegalStateException("сервер текстур ответил HTTP " + second.statusCode()
+                    + " (возможно, лимит запросов, повторю позже)");
+        }
+        Matcher v = Pattern.compile("\"value\"\\s*:\\s*\"([^\"]+)\"").matcher(second.body());
+        Matcher sg = Pattern.compile("\"signature\"\\s*:\\s*\"([^\"]+)\"").matcher(second.body());
         if (!v.find()) {
             throw new IllegalStateException("у ника нет текстур");
         }
@@ -214,6 +285,10 @@ public final class BotManager implements Listener {
             task.cancel();
         }
         removeAll();
+        for (Portal p : portals) {
+            restore(p);
+        }
+        portals.clear();
     }
 
     public int removeAll() {
@@ -333,7 +408,107 @@ public final class BotManager implements Listener {
         return ol.clone().add(back);
     }
 
+    private void restore(Portal p) {
+        for (int i = p.blocks().size() - 1; i >= 0; i--) {
+            PortalBlock pb = p.blocks().get(i);
+            pb.block().setBlockData(pb.old(), false);
+        }
+    }
+
+    private void tickPortals() {
+        if (portals.isEmpty()) {
+            return;
+        }
+        int now = Bukkit.getCurrentTick();
+        Iterator<Portal> it = portals.iterator();
+        while (it.hasNext()) {
+            Portal p = it.next();
+            if (now >= p.expire()) {
+                restore(p);
+                it.remove();
+            }
+        }
+    }
+
+    public Location openPortal(Player owner, int lifeTicks) {
+        Location ol = owner.getLocation();
+        World w = ol.getWorld();
+        Vector f = ol.getDirection().setY(0);
+        if (f.lengthSquared() < 1e-4) {
+            f = new Vector(0, 0, 1);
+        }
+        boolean zDom = Math.abs(f.getZ()) >= Math.abs(f.getX());
+        int sx = zDom ? 0 : (f.getX() > 0 ? 1 : -1);
+        int sz = zDom ? (f.getZ() > 0 ? 1 : -1) : 0;
+        int cx = ol.getBlockX() - sx * 6;
+        int cz = ol.getBlockZ() - sz * 6;
+        int gy = Integer.MIN_VALUE;
+        for (int dy = 4; dy >= -6; dy--) {
+            Block b = w.getBlockAt(cx, ol.getBlockY() + dy, cz);
+            if (b.isPassable() && !b.isLiquid() && !b.getRelative(BlockFace.DOWN).isPassable()) {
+                gy = b.getY();
+                break;
+            }
+        }
+        if (gy == Integer.MIN_VALUE) {
+            return null;
+        }
+        List<PortalBlock> blocks = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 5; j++) {
+                int px = zDom ? cx - 1 + i : cx;
+                int pz = zDom ? cz : cz - 1 + i;
+                Block b = w.getBlockAt(px, gy + j, pz);
+                if (b.getState() instanceof TileState) {
+                    return null;
+                }
+                blocks.add(new PortalBlock(b, b.getBlockData()));
+            }
+        }
+        int idx = 0;
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 5; j++) {
+                Block b = blocks.get(idx++).block();
+                boolean frame = i == 0 || i == 3 || j == 0 || j == 4;
+                if (frame) {
+                    b.setType(Material.OBSIDIAN, false);
+                } else {
+                    b.setType(Material.NETHER_PORTAL, false);
+                    if (b.getBlockData() instanceof Orientable o) {
+                        o.setAxis(zDom ? Axis.X : Axis.Z);
+                        b.setBlockData(o, false);
+                    }
+                }
+            }
+        }
+        double ix = zDom ? cx + 1.0 : cx + 0.5;
+        double iz = zDom ? cz + 0.5 : cz + 1.0;
+        Location inside = new Location(w, ix, gy + 1, iz);
+        inside.setDirection(ol.toVector().subtract(inside.toVector()));
+        portals.add(new Portal(inside.clone(), Bukkit.getCurrentTick() + lifeTicks, blocks));
+        return inside;
+    }
+
+    @EventHandler
+    public void onPlayerPortal(PlayerPortalEvent e) {
+        Location from = e.getFrom();
+        for (Portal p : portals) {
+            if (p.center().getWorld() == from.getWorld() && p.center().distanceSquared(from) < 81) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    @EventHandler
+    public void onEntityPortal(EntityPortalEvent e) {
+        if (isMarked(e.getEntity())) {
+            e.setCancelled(true);
+        }
+    }
+
     private void tick() {
+        tickPortals();
         for (PvpBot b : new ArrayList<>(bots.values())) {
             if (!b.isAlive()) {
                 bots.remove(b.id());
@@ -358,6 +533,7 @@ public final class BotManager implements Listener {
             return;
         }
         e.getDrops().clear();
+        e.getDrops().addAll(bot.loot());
         e.setDroppedExp(0);
         bot.dispose();
     }

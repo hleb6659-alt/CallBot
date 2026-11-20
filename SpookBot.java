@@ -82,8 +82,8 @@ public final class SpookBot extends PvpBot {
     }
 
     private void spawnArmy(Location center) {
-        int privates = plugin.getConfig().getInt("bots.spook.army-privates", 8);
-        int generals = plugin.getConfig().getInt("bots.spook.army-generals", 7);
+        int privates = plugin.getConfig().getInt("bots.spook.army-privates", 6);
+        int generals = plugin.getConfig().getInt("bots.spook.army-generals", 5);
         int commanders = plugin.getConfig().getInt("bots.spook.army-commanders", 1);
         int total = privates + generals + commanders;
         for (int i = 0; i < total; i++) {
@@ -133,6 +133,16 @@ public final class SpookBot extends PvpBot {
             }
         }
         return l;
+    }
+
+    @Override
+    public List<ItemStack> loot() {
+        List<ItemStack> out = new ArrayList<>();
+        out.add(plugin.totems().nullTotem());
+        for (int i = 0; i < 5; i++) {
+            out.add(plugin.totems().lockTotem());
+        }
+        return out;
     }
 
     @Override

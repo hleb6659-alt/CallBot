@@ -88,6 +88,10 @@ public abstract class PvpBot {
         return offhandTotem ? new ItemStack(Material.TOTEM_OF_UNDYING) : null;
     }
 
+    public List<ItemStack> loot() {
+        return List.of();
+    }
+
     protected void abortModes() {
     }
 
@@ -196,6 +200,7 @@ public abstract class PvpBot {
             m.setHealth(20.0);
             manager.mark(m);
         });
+        manager.ensureSkin(type);
         for (long delay : new long[]{5L, 40L, 120L}) {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             ResolvableProfile skin = manager.skin(type.skin());
