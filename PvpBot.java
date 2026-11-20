@@ -132,6 +132,10 @@ public abstract class PvpBot {
         return entity.getUniqueId();
     }
 
+    public String typeId() {
+        return type.id();
+    }
+
     public String name() {
         return type.name();
     }
@@ -192,6 +196,7 @@ public abstract class PvpBot {
             m.setHealth(20.0);
             manager.mark(m);
         });
+        for (long delay : new long[]{5L, 40L, 120L}) {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             ResolvableProfile skin = manager.skin(type.skin());
             if (isAlive() && skin != null) {
@@ -200,7 +205,8 @@ public abstract class PvpBot {
                 } catch (Throwable ignored) {
                 }
             }
-        }, 5L);
+        }, delay);
+        }
         if (flying) {
             state = State.FLYING;
             equip(elytra());

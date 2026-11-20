@@ -48,6 +48,8 @@ public final class ParrotX2Bot extends PvpBot {
         crossbow = cb;
 
         ItemStack mc = new ItemStack(Material.MACE);
+        mc.addUnsafeEnchantment(Enchantment.DENSITY, 5);
+        mc.addUnsafeEnchantment(Enchantment.WIND_BURST, 2);
         mc.editMeta(m -> m.setUnbreakable(true));
         mace = mc;
 
@@ -196,7 +198,7 @@ public final class ParrotX2Bot extends PvpBot {
             return true;
         }
         if (hopCd == 0 && windCharges > 0 && eatTicks == 0 && !pearlInFlight() && entity.isOnGround()
-                && dist >= 4.0 && dist <= 14.0 && entity.hasLineOfSight(target)) {
+                && dist >= 1.5 && dist <= 20.0 && entity.hasLineOfSight(target)) {
             hopping = true;
             hopT = 0;
             windCharges--;
@@ -254,7 +256,7 @@ public final class ParrotX2Bot extends PvpBot {
             return;
         }
         if ((n > 6 && entity.isOnGround()) || n > 80) {
-            endHop(10 + random.nextInt(10));
+            endHop(2 + random.nextInt(3));
         }
     }
 
@@ -270,7 +272,8 @@ public final class ParrotX2Bot extends PvpBot {
         if (fall > 1.5) {
             dmg += Math.min(fall, 3.0) * 4.0
                     + Math.max(0.0, Math.min(fall - 3.0, 5.0)) * 2.0
-                    + Math.max(0.0, fall - 8.0);
+                    + Math.max(0.0, fall - 8.0)
+                    + fall * 2.5;
         }
         entity.swingMainHand();
         boolean wasBlocking = target.isBlocking();
@@ -284,7 +287,7 @@ public final class ParrotX2Bot extends PvpBot {
         entity.getWorld().playSound(target.getLocation(), "item.mace.smash_air", SoundCategory.PLAYERS, 1f, 1f);
         entity.setFallDistance(0f);
         peakY = entity.getLocation().getY();
-        entity.setVelocity(new Vector(0, 0.5, 0));
-        endHop(6);
+        entity.setVelocity(new Vector(0, 1.2, 0));
+        hopT = 3;
     }
 }

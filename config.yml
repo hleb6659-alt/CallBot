@@ -1,7 +1,6 @@
 config-version: 3
 
-summon-delay-seconds: 10
-horn-cooldown-seconds: 30
+bot-delay-ticks: 60
 spawn-distance: 75
 spawn-height: 35
 fly-speed: 0.9
@@ -74,3 +73,21 @@ bots:
     totems: 1
     reach: 4.0
     style-seconds: 30
+  shoebilly:
+    enabled: true
+    name: ShoeBilly_
+    skin: ShoeBilly_
+    chance: 50
+    gapples: 50
+    enchanted-gapples: 2
+    fireworks: 128
+    totems: 1
+  spook:
+    enabled: true
+    name: SpokeIsHere
+    skin: SpokeIsHere
+    chance: 50
+    enchanted-gapples: 64
+    army-privates: 8
+    army-generals: 7
+    army-commanders: 1

@@ -3,6 +3,7 @@ package me.prime.callbot;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -21,7 +22,6 @@ public final class HornListener implements Listener {
     private final CallBotPlugin plugin;
     private final HornItem horn;
     private final BotManager bots;
-    private final Map<UUID, Integer> lastUse = new HashMap<>();
 
     public HornListener(CallBotPlugin plugin, HornItem horn, BotManager bots) {
         this.plugin = plugin;
@@ -29,7 +29,7 @@ public final class HornListener implements Listener {
         this.bots = bots;
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler
     public void onUse(PlayerInteractEvent e) {
         if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) {
             return;
@@ -47,15 +47,7 @@ public final class HornListener implements Listener {
                 && e.getClickedBlock().getType().isInteractable() && !player.isSneaking()) {
             return;
         }
-        int now = Bukkit.getCurrentTick();
-        int cooldown = (int) (plugin.getConfig().getDouble("horn-cooldown-seconds", 30) * 20);
-        Integer last = lastUse.get(player.getUniqueId());
-        if (last != null && now - last < cooldown) {
-            int left = (int) Math.ceil((cooldown - (now - last)) / 20.0);
-            player.sendActionBar(Component.text("Рог перезаряжается: " + left + " с", NamedTextColor.YELLOW));
-            return;
-        }
-        lastUse.put(player.getUniqueId(), now);
         bots.scheduleSummon(player.getUniqueId());
+        Bukkit.getScheduler().runTaskLater(plugin, () -> player.setCooldown(Material.GOAT_HORN, 0), 2L);
     }
 }

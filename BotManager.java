@@ -13,9 +13,10 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
-import org.bukkit.block.data.Rotatable;
+import org.bukkit.block.data.Directional;
 import org.bukkit.block.sign.Side;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -31,6 +32,15 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -38,10 +48,12 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class BotManager implements Listener {
 
-    private record Victim(int tick, UUID botId) {}
+    private record Victim(int tick, UUID botId, String typeId) {}
 
     private static final BlockFace[] RING = {
             BlockFace.SOUTH, BlockFace.SOUTH_SOUTH_WEST, BlockFace.SOUTH_WEST, BlockFace.WEST_SOUTH_WEST,
@@ -58,15 +70,21 @@ public final class BotManager implements Listener {
     private final Random random = new Random();
     private final Map<String, ResolvableProfile> skins = new ConcurrentHashMap<>();
     private BukkitTask task;
+    private final File skinFile;
+    private final YamlConfiguration skinCache;
 
     public BotManager(CallBotPlugin plugin) {
         this.plugin = plugin;
         this.markKey = new NamespacedKey(plugin, "call_bot_mark");
+        this.skinFile = new File(plugin.getDataFolder(), "skins.yml");
+        this.skinCache = YamlConfiguration.loadConfiguration(skinFile);
         addType("theo", "TheoBaldTheBird", TheoBot::new);
         addType("wemmbu", "Wemmbu", WemmbuBot::new);
         addType("flamefrags", "FlameFrags", FlameFragsBot::new);
         addType("parrotx2", "ParrotX2", ParrotX2Bot::new);
         addType("manepear", "Manepear", ManepearBot::new);
+        addType("shoebilly", "ShoeBilly_", ShoeBillyBot::new);
+        addType("spook", "SpokeIsHere", SpookBot::new);
         for (BotType t : types) {
             loadSkin(t);
         }
@@ -87,18 +105,81 @@ public final class BotManager implements Listener {
 
     private void loadSkin(BotType t) {
         String name = t.skin();
+        String key = name.toLowerCase();
         ConfigurationSection s = plugin.getConfig().getConfigurationSection("bots." + t.id());
-        String value = s == null ? "" : s.getString("skin-value", "");
-        if (!value.isEmpty()) {
-            String sig = s.getString("skin-signature", "");
-            var builder = ResolvableProfile.resolvableProfile();
-            builder.uuid(UUID.nameUUIDFromBytes(("callbot:" + name).getBytes()));
-            builder.name(name);
-            builder.addProperty(new ProfileProperty("textures", value, sig.isEmpty() ? null : sig));
-            skins.put(name.toLowerCase(), builder.build());
+        String manual = s == null ? "" : s.getString("skin-value", "");
+        if (!manual.isEmpty()) {
+            applySkin(name, manual, s.getString("skin-signature", ""), null);
             plugin.getLogger().info("Скин " + name + " взят из конфига");
             return;
         }
+        String cached = skinCache.getString("skins." + key + ".value", "");
+        if (!cached.isEmpty()) {
+            applySkin(name, cached, skinCache.getString("skins." + key + ".signature", ""),
+                    skinCache.getString("skins." + key + ".id", ""));
+            plugin.getLogger().info("Скин " + name + " взят из кэша skins.yml");
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                String[] r = fetchMojang(name);
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    skinCache.set("skins." + key + ".id", r[0]);
+                    skinCache.set("skins." + key + ".value", r[1]);
+                    skinCache.set("skins." + key + ".signature", r[2]);
+                    try {
+                        skinCache.save(skinFile);
+                    } catch (IOException ex) {
+                        plugin.getLogger().warning("Не удалось сохранить skins.yml: " + ex);
+                    }
+                    applySkin(name, r[1], r[2], r[0]);
+                    plugin.getLogger().info("Скин " + name + " загружен с серверов Mojang");
+                });
+            } catch (Exception ex) {
+                plugin.getLogger().warning("Скин " + name + ": не удалось получить с серверов Mojang (" + ex + ")");
+                Bukkit.getScheduler().runTask(plugin, () -> loadSkinViaBukkit(name));
+            }
+        });
+    }
+
+    private String[] fetchMojang(String name) throws Exception {
+        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+        String r1 = client.send(HttpRequest.newBuilder(URI.create(
+                "https://api.mojang.com/users/profiles/minecraft/" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
+                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString()).body();
+        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"").matcher(r1);
+        if (!m.find()) {
+            throw new IllegalStateException("ник не найден");
+        }
+        String id = m.group(1);
+        String r2 = client.send(HttpRequest.newBuilder(URI.create(
+                "https://sessionserver.mojang.com/session/minecraft/profile/" + id + "?unsigned=false"))
+                .timeout(Duration.ofSeconds(8)).GET().build(), HttpResponse.BodyHandlers.ofString()).body();
+        Matcher v = Pattern.compile("\"value\"\\s*:\\s*\"([^\"]+)\"").matcher(r2);
+        Matcher sg = Pattern.compile("\"signature\"\\s*:\\s*\"([^\"]+)\"").matcher(r2);
+        if (!v.find()) {
+            throw new IllegalStateException("у ника нет текстур");
+        }
+        return new String[]{id, v.group(1), sg.find() ? sg.group(1) : ""};
+    }
+
+    private void applySkin(String name, String value, String signature, String id) {
+        UUID uuid;
+        if (id != null && id.length() == 32) {
+            uuid = UUID.fromString(id.replaceFirst(
+                    "(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}+)", "$1-$2-$3-$4-$5"));
+        } else {
+            uuid = UUID.nameUUIDFromBytes(("callbot:" + name).getBytes(StandardCharsets.UTF_8));
+        }
+        var builder = ResolvableProfile.resolvableProfile();
+        builder.uuid(uuid);
+        builder.name(name);
+        builder.addProperty(new ProfileProperty("textures", value,
+                signature == null || signature.isEmpty() ? null : signature));
+        skins.put(name.toLowerCase(), builder.build());
+    }
+
+    private void loadSkinViaBukkit(String name) {
         Bukkit.createProfile(name).update().thenAccept(p -> {
             var builder = ResolvableProfile.resolvableProfile();
             if (p.getId() != null) {
@@ -112,7 +193,7 @@ public final class BotManager implements Listener {
             }
             skins.put(name.toLowerCase(), builder.build());
             plugin.getLogger().info("Скин " + name + (p.getProperties().isEmpty()
-                    ? ": текстур не найдено, проверь ник" : " загружен"));
+                    ? ": текстур не найдено, проверь ник" : " загружен (запасной способ)"));
         }).exceptionally(ex -> {
             plugin.getLogger().warning("Не удалось загрузить скин " + name + ": " + ex);
             return null;
@@ -143,6 +224,10 @@ public final class BotManager implements Listener {
         return n;
     }
 
+    public void register(PvpBot bot) {
+        bots.put(bot.id(), bot);
+    }
+
     public int killAll() {
         int n = 0;
         for (PvpBot bot : new ArrayList<>(bots.values())) {
@@ -163,11 +248,11 @@ public final class BotManager implements Listener {
     }
 
     public void markVictim(Player p, PvpBot bot) {
-        victims.put(p.getUniqueId(), new Victim(Bukkit.getCurrentTick(), bot.id()));
+        victims.put(p.getUniqueId(), new Victim(Bukkit.getCurrentTick(), bot.id(), bot.typeId()));
     }
 
     public void scheduleSummon(UUID summoner) {
-        long delay = Math.max(1L, (long) (plugin.getConfig().getDouble("summon-delay-seconds", 10) * 20));
+        long delay = Math.max(1L, plugin.getConfig().getLong("bot-delay-ticks", 60L));
         Bukkit.getScheduler().runTaskLater(plugin, () -> summon(summoner), delay);
     }
 
@@ -311,53 +396,88 @@ public final class BotManager implements Listener {
     public void onPlayerDeath(PlayerDeathEvent e) {
         Player dead = e.getEntity();
         Victim v = victims.remove(dead.getUniqueId());
-        if (v == null || Bukkit.getCurrentTick() - v.tick() > 200) {
+        if (v == null || Bukkit.getCurrentTick() - v.tick() > 200 || !"theo".equals(v.typeId())) {
             return;
         }
         Location loc = dead.getLocation();
         PvpBot bot = bots.get(v.botId());
-        Bukkit.getScheduler().runTaskLater(plugin, () -> placeLoser(loc, bot), 8L);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> buildGrave(loc, bot), 8L);
     }
 
-    private void placeLoser(Location loc, PvpBot bot) {
+    private boolean free(Block b) {
+        return b.isReplaceable() && !b.isLiquid();
+    }
+
+    private void buildGrave(Location loc, PvpBot bot) {
         World w = loc.getWorld();
         if (w == null) {
             return;
         }
-        Block b = w.getBlockAt(loc);
-        for (int i = 0; i < 3 && !b.isReplaceable() && !b.isPassable(); i++) {
-            b = b.getRelative(BlockFace.UP);
+        Block base = w.getBlockAt(loc);
+        for (int i = 0; i < 3 && !base.isReplaceable() && !base.isPassable(); i++) {
+            base = base.getRelative(BlockFace.UP);
         }
-        for (int i = 0; i < 8 && !b.getRelative(BlockFace.DOWN).getType().isSolid(); i++) {
-            if (b.getY() <= w.getMinHeight() + 1) {
+        for (int i = 0; i < 8 && !base.getRelative(BlockFace.DOWN).getType().isSolid(); i++) {
+            if (base.getY() <= w.getMinHeight() + 1) {
                 return;
             }
-            b = b.getRelative(BlockFace.DOWN);
+            base = base.getRelative(BlockFace.DOWN);
         }
-        if (!b.isReplaceable() || b.isLiquid() || !b.getRelative(BlockFace.DOWN).getType().isSolid()) {
+        if (!free(base) || !base.getRelative(BlockFace.DOWN).getType().isSolid()) {
             return;
         }
-        BlockFace face = BlockFace.SOUTH;
+        BlockFace dir = BlockFace.SOUTH;
         if (bot != null && bot.isAlive()) {
             Location bl = bot.location();
-            double dx = bl.getX() - (b.getX() + 0.5);
-            double dz = bl.getZ() - (b.getZ() + 0.5);
-            double yaw = Math.toDegrees(Math.atan2(-dx, dz));
-            int idx = (int) Math.round(yaw / 22.5);
-            face = RING[((idx % 16) + 16) % 16];
+            double dx = (base.getX() + 0.5) - bl.getX();
+            double dz = (base.getZ() + 0.5) - bl.getZ();
+            if (Math.abs(dx) > Math.abs(dz)) {
+                dir = dx > 0 ? BlockFace.EAST : BlockFace.WEST;
+            } else {
+                dir = dz > 0 ? BlockFace.SOUTH : BlockFace.NORTH;
+            }
             bot.swingHand();
         }
-        b.setType(Material.OAK_SIGN, false);
-        if (b.getBlockData() instanceof Rotatable rot) {
-            rot.setRotation(face);
-            b.setBlockData(rot, false);
+        Block mound1 = base.getRelative(dir);
+        Block mound2 = mound1.getRelative(dir);
+        Block signSpot = base.getRelative(dir.getOppositeFace());
+
+        base.setType(Material.STONE_BRICKS, false);
+        if (free(mound1)) {
+            mound1.setType(Material.COARSE_DIRT, false);
         }
+        if (free(mound2)) {
+            mound2.setType(Material.COARSE_DIRT, false);
+        }
+        boolean signed = false;
+        if (free(signSpot)) {
+            signSpot.setType(Material.OAK_WALL_SIGN, false);
+            if (signSpot.getBlockData() instanceof Directional d) {
+                d.setFacing(dir.getOppositeFace());
+                signSpot.setBlockData(d, false);
+            }
+            signed = writeLoser(signSpot);
+        }
+        Block top = base.getRelative(BlockFace.UP);
+        if (free(top)) {
+            if (signed) {
+                top.setType(Material.STONE_BRICK_SLAB, false);
+            } else {
+                top.setType(Material.OAK_SIGN, false);
+                writeLoser(top);
+            }
+        }
+        w.playSound(base.getLocation(), "block.stone.place", org.bukkit.SoundCategory.BLOCKS, 1f, 1f);
+    }
+
+    private boolean writeLoser(Block b) {
         BlockState st = b.getState();
         if (st instanceof Sign sign) {
             sign.getSide(Side.FRONT).line(1, Component.text("loser"));
             sign.setWaxed(true);
             sign.update(true, false);
+            return true;
         }
-        w.playSound(b.getLocation(), "block.wood.place", org.bukkit.SoundCategory.BLOCKS, 1f, 1f);
+        return false;
     }
 }
